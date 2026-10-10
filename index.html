@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1035">
+<title>Daddy Mike</title>
+<link rel="icon" type="image/png" href="assets/hoofd_neutraal.png">
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1035; }
+  body { font-family: "Trebuchet MS", system-ui, -apple-system, "Segoe UI", sans-serif; color: #fff;
+         -webkit-user-select: none; user-select: none; overscroll-behavior: none; }
+  #wrap { position: fixed; top: 0; left: 50%; transform: translateX(-50%); overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  #mute { position: absolute; top: calc(8px + env(safe-area-inset-top)); right: 8px; width: 40px; height: 40px;
+          border-radius: 50%; border: 3px solid #000; background: #fff; font-size: 18px; line-height: 1;
+          padding: 0; cursor: pointer; z-index: 3; }
+  .screen { position: absolute; inset: 0; z-index: 2; display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 10px; padding: 24px 22px; text-align: center;
+            background: rgba(27, 16, 53, .84); }
+  .screen[hidden] { display: none; }
+  h1 { margin: 0; font-size: 52px; line-height: 1; letter-spacing: 1px; font-weight: 900;
+       background: linear-gradient(90deg, #ff3b6b, #ff9a3b, #ffe14a, #35d6c4, #4a8dff, #b765ff, #ff6fd0);
+       -webkit-background-clip: text; background-clip: text; color: transparent;
+       filter: drop-shadow(0 3px 0 #000); }
+  h2 { margin: 0; font-size: 26px; line-height: 1.15; font-weight: 900; }
+  .kop { width: 150px; height: 150px; object-fit: contain; animation: wiebel 1.6s ease-in-out infinite; }
+  @keyframes wiebel { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+  .uitleg { margin: 0; font-size: 15px; line-height: 1.45; max-width: 320px; }
+  .uitleg b { color: #ffe14a; }
+  .score { font-size: 18px; margin: 0; }
+  .score b { font-size: 24px; color: #ffe14a; }
+  button.groot { margin-top: 6px; padding: 14px 34px; font: inherit; font-size: 22px; font-weight: 900; color: #000;
+                 border: 4px solid #000; border-radius: 999px; cursor: pointer; box-shadow: 0 5px 0 #000;
+                 background: linear-gradient(90deg, #ff6fd0, #ffe14a, #35d6c4); }
+  button.groot:active { transform: translateY(4px); box-shadow: 0 1px 0 #000; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="spel"></canvas>
+  <button id="mute" aria-label="Geluid aan of uit">🔊</button>
+
+  <div class="screen" id="start">
+    <h1>Daddy Mike</h1>
+    <img class="kop" src="assets/hoofd_neutraal.png" alt="Mike">
+    <p class="uitleg">☀️ <b>Overdag:</b> vang de poepluiers, ontwijk het bier.<br>
+       🪩 <b>'s Nachts:</b> vang het bier, ontwijk de luiers.<br>
+       ✨ De gouden glitterluier is altijd raak: <b>+5</b>!<br>
+       🍾 Fles Salmari: <b>dubbel</b>, 's nachts punten, overdag straf.</p>
+    <p class="uitleg">Sleep met je vinger, of gebruik de muis of pijltjestoetsen.</p>
+    <p class="score">Highscore: <b id="hsStart">0</b></p>
+    <button class="groot" id="btnStart">Start</button>
+  </div>
+
+  <div class="screen" id="over" hidden>
+    <h1>Game over</h1>
+    <h2 id="overTekst"></h2>
+    <p class="score">Score: <b id="eindScore">0</b></p>
+    <p class="score" id="nieuwRecord" hidden>🌈 Nieuw record, schat! 🌈</p>
+    <p class="score">Highscore: <b id="hsOver">0</b></p>
+    <button class="groot" id="btnOpnieuw">Nog een keer</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// ---------- Instellingen ----------
+const W = 390;                 // logische breedte; hoogte volgt het scherm
+const FASE_DUUR = 20, WAARSCHUWING = 3;
+const REGENBOOG = ['#ff3b6b', '#ff9a3b', '#ffe14a', '#35d6c4', '#4a8dff', '#b765ff', '#ff6fd0'];
+const GOED = ['Slay!', 'Luier-diva!', 'Yasss, daddy!', 'Fierce verschoond!', 'Proost schat!', 'Werk het, papa!'];
+const SALMARI_GOED = ['Salmari! Dubbel proost!', 'Kippis, daddy!', 'Zoute drop-diva!'];
+const SALMARI_FOUT = ['Salmari bij het ontbijt?!', 'Dubbel oops, honey...'];
+const FOUT = ['Oops, honey...', 'Dat was geen catwalk-move', 'Glitter in de luier, help'];
+const GAME_OVER = ['Mike heeft zijn papadag niet overleefd', 'Te veel bier, te weinig luiers. Classic.', 'Even bijkomen op de boot'];
+const TESTMODUS = location.hash === '#test';   // onsterfelijk, om de fases te kunnen bekijken
+const HS_KEY = 'daddyMikeHighscore', MUTE_KEY = 'daddyMikeMute';
+
+// Maten uit de beelden (gemeten met tools/meet.py), als fractie van het beeld.
+// Het lijf is iets smaller getekend dan het beeld, zodat de wasmand niet het halve scherm vult.
+const LIJF = { breedte: 124, hoogte: 232, mandX0: 0.014, mandX1: 0.986, mandY0: 0.03, mandY1: 0.16, nek: 0.414, kin: 0.52 };
+const HOOFD_BREEDTE = 63;      // breedte van het gezicht in spel-eenheden
+// De drie hoofden delen exact hetzelfde kader (512x512), dus ook dezelfde maten.
+const HOOFD = { b: 0.648, cx: 0.514, top: 0.012, onder: 0.973 };
+
+// ---------- Canvas ----------
+const wrap = document.getElementById('wrap');
+const canvas = document.getElementById('spel');
+const ctx = canvas.getContext('2d');
+let H = 844, schaal = 1;
+
+function resize() {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const cw = Math.min(vw, Math.round(vh * 0.62));
+  wrap.style.width = cw + 'px';
+  wrap.style.height = vh + 'px';
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = Math.round(cw * dpr);
+  canvas.height = Math.round(vh * dpr);
+  schaal = canvas.width / W;
+  H = canvas.height / schaal;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------- Beelden ----------
+const VERSIE = 2;              // ophogen als een beeld verandert (assets worden een dag gecachet)
+const img = {};
+const BEELDEN = { neutraal: 'hoofd_neutraal.png', blij: 'hoofd_blij.png', vies: 'hoofd_vies.png', lijf: 'lijf.png',
+                  luier: 'poepluier.png', goud: 'gouden_glitterluier.png', bier: 'bierblikje.png', salmari: 'salmari.png',
+                  dag: 'achtergrond_dag.jpg' };
+for (const [naam, bestand] of Object.entries(BEELDEN)) {
+  const i = new Image();
+  i.src = 'assets/' + bestand + '?v=' + VERSIE;
+  img[naam] = i;
+}
+const klaar = i => i.complete && i.naturalWidth > 0;
+
+// ---------- Opslag ----------
+function lees(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+function schrijf(key, v) { try { localStorage.setItem(key, v); } catch (e) { /* privémodus: dan maar niet */ } }
+let highscore = parseInt(lees(HS_KEY), 10) || 0;
+
+// ---------- Geluid (Web Audio) ----------
+let ac = null, master = null, ruis = null;
+let gedempt = lees(MUTE_KEY) === '1';
+const muteKnop = document.getElementById('mute');
+
+function audioAan() {
+  if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  ac = new AC();
+  master = ac.createGain();
+  master.gain.value = gedempt ? 0 : 0.6;
+  master.connect(ac.destination);
+  ruis = ac.createBuffer(1, ac.sampleRate * 0.2, ac.sampleRate);
+  const d = ruis.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+}
+function zetMute(m) {
+  gedempt = m;
+  muteKnop.textContent = m ? '🔇' : '🔊';
+  schrijf(MUTE_KEY, m ? '1' : '0');
+  if (master) master.gain.setTargetAtTime(m ? 0 : 0.6, ac.currentTime, 0.02);
+}
+muteKnop.addEventListener('click', () => { audioAan(); zetMute(!gedempt); muteKnop.blur(); });
+zetMute(gedempt);
+
+function toon(type, f0, f1, t, duur, vol) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + duur);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(vol, t + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + duur);
+  o.connect(g);
+  o.start(t); o.stop(t + duur + 0.02);
+  return g;
+}
+function plop(bonus) {
+  if (!ac) return;
+  const t = ac.currentTime;
+  toon('sine', 380, 900, t, 0.09, 0.5).connect(master);
+  if (bonus) [1047, 1319, 1568, 2093].forEach((f, i) => toon('triangle', f, f, t + 0.06 + i * 0.07, 0.16, 0.25).connect(master));
+}
+function trombone() {
+  if (!ac) return;
+  const t0 = ac.currentTime;
+  const filter = ac.createBiquadFilter();
+  filter.type = 'lowpass'; filter.frequency.value = 900;
+  filter.connect(master);
+  [[233, 0.26], [220, 0.26], [208, 0.26], [196, 0.75]].forEach(([f, duur], i) => {
+    const t = t0 + i * 0.28;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(f * 1.03, t);
+    o.frequency.linearRampToValueAtTime(f, t + 0.06);
+    if (i === 3) {   // laatste noot zakt treurig in, met vibrato
+      o.frequency.linearRampToValueAtTime(f * 0.86, t + duur);
+      const lfo = ac.createOscillator(), lg = ac.createGain();
+      lfo.frequency.value = 6; lg.gain.value = 5;
+      lfo.connect(lg); lg.connect(o.frequency);
+      lfo.start(t); lfo.stop(t + duur);
+    }
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.3, t + 0.04);
+    g.gain.setValueAtTime(0.3, t + duur - 0.08);
+    g.gain.linearRampToValueAtTime(0.0001, t + duur);
+    o.connect(g); g.connect(filter);
+    o.start(t); o.stop(t + duur + 0.02);
+  });
+}
+// Discobeat: vier-op-de-vloer, hihat op de tel ertussen, stuiterende octaafbas.
+const STAP = 60 / 122 / 4, BAS = [55, 55, 65.4, 49];
+let beatAan = false, volgendeNoot = 0, stapNr = 0;
+function beat() {
+  if (!ac || !beatAan) return;
+  while (volgendeNoot < ac.currentTime + 0.12) {
+    const t = volgendeNoot, s = stapNr % 16, maat = Math.floor(stapNr / 16) % 4;
+    if (s % 4 === 0) toon('sine', 150, 42, t, 0.22, 0.8).connect(master);
+    if (s % 4 === 2) {
+      const n = ac.createBufferSource(), hp = ac.createBiquadFilter(), g = ac.createGain();
+      n.buffer = ruis; hp.type = 'highpass'; hp.frequency.value = 7000;
+      g.gain.setValueAtTime(0.22, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+      n.connect(hp); hp.connect(g); g.connect(master);
+      n.start(t); n.stop(t + 0.08);
+    }
+    if (s % 2 === 0) {
+      const f = BAS[maat] * (s % 4 === 2 ? 2 : 1);
+      toon('sawtooth', f, f, t, 0.2, 0.16).connect(master);
+    }
+    if (s === 6 || s === 14) [523.3, 659.3, 784].forEach(f => toon('square', f, f, t, 0.12, 0.035).connect(master));
+    volgendeNoot += STAP; stapNr++;
+  }
+}
+function zetBeat(aan) {
+  if (aan && !beatAan && ac) { volgendeNoot = ac.currentTime + 0.05; stapNr = 0; }
+  beatAan = aan;
+}
+
+// ---------- Spelstatus ----------
+let status = 'start';          // start | spel | over
+let score, levens, nacht, faseTijd, wissels, spawnTijd, tijd = 0;
+let items = [], deeltjes = [], popups = [], spoor = [];
+let nachtMate = 0;             // 0 = dag, 1 = nacht (vloeiende overgang)
+let schud = 0;
+const mike = { x: W / 2, doel: W / 2, vx: 0, plet: 0, gezicht: 'neutraal', gezichtTijd: 0, loop: 0 };
+const toetsen = { links: false, rechts: false };
+
+const kies = a => a[Math.floor(Math.random() * a.length)];
+const grond = () => H - 14;
+
+function nieuwSpel() {
+  score = 0; levens = 3; nacht = false; faseTijd = 0; wissels = 0; spawnTijd = 0.6;
+  items = []; deeltjes = []; popups = []; spoor = [];
+  mike.x = mike.doel = W / 2; mike.vx = 0; mike.plet = 0; mike.gezichtTijd = 0; mike.gezicht = 'neutraal';
+  schud = 0;
+  status = 'spel';
+  document.getElementById('start').hidden = true;
+  document.getElementById('over').hidden = true;
+  zetBeat(false);
+}
+
+function gameOver() {
+  status = 'over';
+  zetBeat(false);
+  const record = score > highscore;
+  if (record) { highscore = score; schrijf(HS_KEY, String(highscore)); }
+  document.getElementById('overTekst').textContent = kies(GAME_OVER);
+  document.getElementById('eindScore').textContent = score;
+  document.getElementById('hsOver').textContent = highscore;
+  document.getElementById('nieuwRecord').hidden = !record;
+  setTimeout(() => { if (status === 'over') document.getElementById('over').hidden = false; }, 900);
+}
+
+function glitter(x, y, n, goud) {
+  for (let i = 0; i < n; i++) {
+    const h = Math.random() * Math.PI * 2, v = 60 + Math.random() * (goud ? 320 : 200);
+    deeltjes.push({ x, y, vx: Math.cos(h) * v, vy: Math.sin(h) * v - 80, leven: 0.5 + Math.random() * 0.6, max: 1.1,
+                    kleur: goud && Math.random() < 0.6 ? '#ffd23f' : kies(REGENBOOG), r: 2 + Math.random() * 3.5,
+                    draai: Math.random() * 6 });
+  }
+}
+function popup(tekst, x, y, kleur) {
+  popups.push({ tekst, x: Math.max(96, Math.min(W - 96, x)), y, leven: 1.1, kleur });
+}
+
+function spawn() {
+  const r = Math.random();
+  const goedSoort = nacht ? 'bier' : 'luier', foutSoort = nacht ? 'luier' : 'bier';
+  const soort = r < 0.04 ? 'goud' : r < 0.11 ? 'salmari' : r < 0.6 ? goedSoort : foutSoort;
+  const snelheid = (165 + Math.random() * 60) * (1 + wissels * 0.14);
+  items.push({ soort, x: 34 + Math.random() * (W - 68), y: -40, vy: snelheid,
+               hoek: (Math.random() - 0.5) * 0.6, draai: (Math.random() - 0.5) * 2.4 });
+}
+
+function vang(it) {
+  const mandY = grond() - LIJF.hoogte * (1 - LIJF.mandY0);
+  const salmari = it.soort === 'salmari';             // drank: telt dubbel, goed of fout
+  const goed = it.soort === 'goud' || (it.soort !== 'luier') === nacht;
+  if (goed) {
+    const bonus = it.soort === 'goud';
+    score += bonus ? 5 : salmari ? 2 : 1;
+    glitter(it.x, mandY, bonus ? 60 : 16, bonus);
+    popup(bonus ? '+5 ✨ ' + kies(GOED) : salmari ? '+2 ' + kies(SALMARI_GOED) : kies(GOED), it.x, mandY - 26, bonus ? '#ffd23f' : kies(REGENBOOG));
+    mike.gezicht = 'blij'; mike.gezichtTijd = 0.5; mike.plet = 1;
+    plop(bonus);
+  } else {
+    if (!TESTMODUS) levens -= salmari ? 2 : 1;
+    schud = 0.45;
+    popup(kies(salmari ? SALMARI_FOUT : FOUT), it.x, mandY - 26, '#ffffff');
+    mike.gezicht = 'vies'; mike.gezichtTijd = 0.5;
+    trombone();
+    if (levens <= 0) gameOver();
+  }
+}
+
+function wisselFase() {
+  nacht = !nacht; faseTijd = 0; wissels++;
+  for (const it of items) glitter(it.x, it.y, 6, false);   // eerlijk beginnen: lucht leeg
+  items = [];
+  spawnTijd = 0.7;
+  zetBeat(nacht);
+}
+
+// ---------- Update ----------
+function update(dt) {
+  tijd += dt;
+  nachtMate += ((status !== 'start' && nacht ? 1 : 0) - nachtMate) * Math.min(1, dt * 3);
+
+  for (const d of deeltjes) { d.x += d.vx * dt; d.y += d.vy * dt; d.vy += 420 * dt; d.leven -= dt; d.draai += dt * 8; }
+  deeltjes = deeltjes.filter(d => d.leven > 0);
+  for (const p of popups) { p.y -= 46 * dt; p.leven -= dt; }
+  popups = popups.filter(p => p.leven > 0);
+  for (const s of spoor) s.leven -= dt;
+  spoor = spoor.filter(s => s.leven > 0);
+  schud = Math.max(0, schud - dt);
+  mike.plet = Math.max(0, mike.plet - dt * 4);
+  if (mike.gezichtTijd > 0 && (mike.gezichtTijd -= dt) <= 0) mike.gezicht = 'neutraal';
+
+  if (status !== 'spel') { mike.vx = 0; return; }
+
+  // Mike
+  if (toetsen.links) mike.doel -= 520 * dt;
+  if (toetsen.rechts) mike.doel += 520 * dt;
+  const half = LIJF.breedte * 0.5;
+  mike.doel = Math.max(half * 0.7, Math.min(W - half * 0.7, mike.doel));
+  const oud = mike.x;
+  const stap = (mike.doel - mike.x) * Math.min(1, dt * 22);
+  mike.x += Math.max(-1500 * dt, Math.min(1500 * dt, stap));
+  mike.vx = (mike.x - oud) / dt;
+  mike.loop += Math.min(Math.abs(mike.vx), 600) * dt * 0.06;
+  if (Math.abs(mike.vx) > 430) spoor.push({ x: mike.x, leven: 0.35 });
+
+  // Fases
+  faseTijd += dt;
+  if (faseTijd >= FASE_DUUR) wisselFase();
+
+  // Vallende spullen
+  spawnTijd -= dt;
+  if (spawnTijd <= 0 && FASE_DUUR - faseTijd > 0.5) {
+    spawn();
+    spawnTijd = Math.max(0.3, 0.85 * Math.pow(0.88, wissels)) * (0.75 + Math.random() * 0.5);
+  }
+  const bw = LIJF.breedte;
+  const x0 = mike.x + (LIJF.mandX0 - 0.5) * bw, x1 = mike.x + (LIJF.mandX1 - 0.5) * bw;
+  const y0 = grond() - LIJF.hoogte * (1 - LIJF.mandY0), y1 = grond() - LIJF.hoogte * (1 - LIJF.mandY1);
+  for (const it of items) {
+    it.y += it.vy * dt; it.hoek += it.draai * dt;
+    if (!it.weg && it.y > y0 - 6 && it.y < y1 && it.x > x0 - 6 && it.x < x1 + 6) { it.weg = true; vang(it); }
+    if (it.y > H + 60) it.weg = true;
+  }
+  items = items.filter(it => !it.weg);
+  if (status !== 'spel') items = [];
+}
+
+// ---------- Tekenen ----------
+function hart(x, y, s, vol) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.beginPath();
+  ctx.moveTo(0, 9);
+  ctx.bezierCurveTo(-14, -1, -9, -12, 0, -5);
+  ctx.bezierCurveTo(9, -12, 14, -1, 0, 9);
+  ctx.closePath();
+  if (vol) {
+    const g = ctx.createLinearGradient(-11, -9, 11, 9);
+    REGENBOOG.forEach((k, i) => g.addColorStop(i / (REGENBOOG.length - 1), k));
+    ctx.fillStyle = g;
+  } else ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.fill();
+  ctx.lineWidth = 2.2; ctx.lineJoin = 'round'; ctx.strokeStyle = '#000'; ctx.stroke();
+  ctx.restore();
+}
+
+function tekst(t, x, y, px, kleur, rand) {
+  ctx.font = `900 ${px}px "Trebuchet MS", system-ui, sans-serif`;
+  ctx.lineJoin = 'round'; ctx.lineWidth = rand || Math.max(3, px / 5);
+  ctx.strokeStyle = '#000'; ctx.strokeText(t, x, y);
+  ctx.fillStyle = kleur; ctx.fillText(t, x, y);
+}
+
+function tekenAchtergrond() {
+  if (klaar(img.dag)) {
+    const b = img.dag, s = Math.max(W / b.naturalWidth, H / b.naturalHeight);
+    const bw = b.naturalWidth * s, bh = b.naturalHeight * s;
+    ctx.drawImage(b, (W - bw) / 2, H - bh, bw, bh);
+  } else {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#9edcff'); g.addColorStop(0.7, '#e9f7ff'); g.addColorStop(0.7, '#8a7f76'); g.addColorStop(1, '#6d635c');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+}
+
+function tekenNacht() {
+  if (nachtMate < 0.01) return;
+  ctx.fillStyle = `rgba(14, 6, 52, ${0.66 * nachtMate})`;
+  ctx.fillRect(0, 0, W, H);
+
+  // Draaiende spotlights
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 4; i++) {
+    const ox = W * (0.12 + i * 0.253), hoek = Math.sin(tijd * (0.9 + i * 0.23) + i * 1.7) * 0.55;
+    const lengte = H * 1.1, breed = 0.16;
+    const g = ctx.createLinearGradient(ox, 0, ox + Math.sin(hoek) * lengte, Math.cos(hoek) * lengte);
+    g.addColorStop(0, REGENBOOG[(i * 2) % 7] + 'aa'); g.addColorStop(1, REGENBOOG[(i * 2) % 7] + '00');
+    ctx.globalAlpha = 0.5 * nachtMate;
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(ox, -10);
+    ctx.lineTo(ox + Math.sin(hoek - breed) * lengte, Math.cos(hoek - breed) * lengte);
+    ctx.lineTo(ox + Math.sin(hoek + breed) * lengte, Math.cos(hoek + breed) * lengte);
+    ctx.closePath(); ctx.fill();
+  }
+  // Lichtvlekjes van de discobal
+  for (let i = 0; i < 14; i++) {
+    const a = tijd * 0.5 + i * 0.449, r = 70 + (i * 53) % 230;
+    ctx.globalAlpha = 0.35 * nachtMate;
+    ctx.fillStyle = REGENBOOG[i % 7];
+    ctx.beginPath();
+    ctx.ellipse(W / 2 + Math.cos(a) * r * 0.9, 130 + (i * 97) % (H - 200) + Math.sin(a * 1.3) * 20, 6, 4, a, 0, 6.3);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Discobal zakt in beeld
+  const R = 34, cy = -R - 10 + (R + 10 + 128) * (1 - Math.pow(1 - nachtMate, 3));
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(W / 2, -5); ctx.lineTo(W / 2, cy - R); ctx.stroke();
+  ctx.save();
+  ctx.beginPath(); ctx.arc(W / 2, cy, R, 0, 6.3); ctx.clip();
+  ctx.fillStyle = '#8f96b8'; ctx.fillRect(W / 2 - R, cy - R, R * 2, R * 2);
+  const kolommen = 9, rijen = 8, draai = tijd * 0.7;
+  for (let r = 0; r < rijen; r++) {
+    const lat = (r + 0.5) / rijen * Math.PI, ry = cy - Math.cos(lat) * R, straal = Math.sin(lat) * R;
+    for (let k = 0; k < kolommen * 2; k++) {
+      const lon = (k / (kolommen * 2)) * Math.PI * 2 + draai;
+      if (Math.cos(lon) < 0) continue;
+      const fonkel = Math.sin(k * 12.9 + r * 78.2 + Math.floor(tijd * 6 + k + r) * 3.7) * 0.5 + 0.5;
+      ctx.fillStyle = fonkel > 0.82 ? kies(REGENBOOG) : `hsl(230, 25%, ${45 + fonkel * 45}%)`;
+      const tw = Math.cos(lon) * straal * 0.33 + 1;
+      ctx.fillRect(W / 2 + Math.sin(lon) * straal - tw / 2, ry - R / rijen * 0.42, tw, R / rijen * 1.5);
+    }
+  }
+  const glans = ctx.createRadialGradient(W / 2 - 12, cy - 14, 2, W / 2, cy, R);
+  glans.addColorStop(0, 'rgba(255,255,255,.55)'); glans.addColorStop(0.5, 'rgba(255,255,255,0)'); glans.addColorStop(1, 'rgba(10,0,40,.45)');
+  ctx.fillStyle = glans; ctx.fillRect(W / 2 - R, cy - R, R * 2, R * 2);
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(W / 2, cy, R, 0, 6.3); ctx.lineWidth = 3.5; ctx.strokeStyle = '#000'; ctx.stroke();
+}
+
+function tekenSpoor() {
+  if (spoor.length < 2) return;
+  const y = grond() - LIJF.hoogte * (1 - LIJF.nek) - 8;
+  ctx.lineCap = 'round'; ctx.lineWidth = 7;
+  for (let i = 1; i < spoor.length; i++) {
+    const a = spoor[i - 1], b = spoor[i];
+    ctx.globalAlpha = Math.max(0, Math.min(a.leven, b.leven) / 0.35) * 0.85;
+    REGENBOOG.forEach((k, j) => {
+      ctx.strokeStyle = k;
+      ctx.beginPath(); ctx.moveTo(a.x, y + j * 7); ctx.lineTo(b.x, y + j * 7); ctx.stroke();
+    });
+  }
+  ctx.globalAlpha = 1;
+}
+
+const EMOJI = { luier: '💩', goud: '🌟', bier: '🍺', salmari: '🍾' };
+function tekenItem(it) {
+  const b = img[it.soort], h = it.soort === 'salmari' ? 78 : it.soort === 'bier' ? 64 : 60;
+  ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(it.hoek);
+  if (it.soort === 'goud') {
+    ctx.globalAlpha = 0.45 + Math.sin(tijd * 10) * 0.15;
+    ctx.fillStyle = '#ffe98a';
+    ctx.beginPath(); ctx.arc(0, 0, 40, 0, 6.3); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+  if (klaar(b)) {
+    const s = h / Math.max(b.naturalHeight, b.naturalWidth * 0.8);
+    ctx.drawImage(b, -b.naturalWidth * s / 2, -b.naturalHeight * s / 2, b.naturalWidth * s, b.naturalHeight * s);
+  } else {
+    ctx.font = '44px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(EMOJI[it.soort], 0, 0);
+  }
+  ctx.restore();
+}
+
+function tekenMike() {
+  const lh = LIJF.hoogte, lb = LIJF.breedte;
+  const k = Math.sin(mike.plet * Math.PI);                      // squash & stretch bij vangen
+  const loopt = Math.min(1, Math.abs(mike.vx) / 260);
+  ctx.save();
+  ctx.translate(mike.x + (schud > 0 ? Math.sin(tijd * 70) * 7 * schud / 0.45 : 0), grond());
+  ctx.scale(1 + 0.16 * k, 1 - 0.14 * k);
+  ctx.rotate(Math.max(-0.12, Math.min(0.12, mike.vx / 5000)));
+
+  // schaduw
+  ctx.fillStyle = 'rgba(0,0,0,.25)';
+  ctx.beginPath(); ctx.ellipse(0, 2, lb * 0.3, 8, 0, 0, 6.3); ctx.fill();
+
+  if (klaar(img.lijf)) ctx.drawImage(img.lijf, -lb / 2, -lh, lb, lh);
+  else { ctx.fillStyle = '#1d2540'; ctx.fillRect(-26, -lh * (1 - LIJF.nek), 52, lh * (1 - LIJF.nek)); ctx.fillStyle = '#fff'; ctx.fillRect(-lb / 2, -lh, lb, 26); }
+
+  // hoofd: wiebelt bij lopen, draait om de nek
+  const hb = klaar(img[mike.gezicht]) ? img[mike.gezicht] : img.neutraal;
+  if (klaar(hb)) {
+    const S = HOOFD_BREEDTE / HOOFD.b;
+    ctx.save();
+    ctx.translate(0, -lh * (1 - LIJF.kin));
+    ctx.rotate(Math.sin(mike.loop) * 0.13 * loopt + (schud > 0 ? Math.sin(tijd * 45) * 0.2 * schud / 0.45 : 0));
+    ctx.drawImage(hb, -HOOFD.cx * S, -HOOFD.onder * S, S, S);
+    ctx.restore();
+  }
+  // wasmand nog een keer over het hoofd heen, zodat die op zijn kruin rust
+  if (klaar(img.lijf)) {
+    const b = img.lijf, f = LIJF.mandY1 + 0.005;
+    ctx.drawImage(b, 0, 0, b.naturalWidth, b.naturalHeight * f, -lb / 2, -lh, lb, lh * f);
+  }
+  ctx.restore();
+}
+
+function tekenDeeltjes() {
+  for (const d of deeltjes) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, d.leven * 2.5);
+    ctx.translate(d.x, d.y); ctx.rotate(d.draai);
+    ctx.fillStyle = d.kleur;
+    ctx.beginPath();                                            // vierpuntig sterretje
+    for (let i = 0; i < 8; i++) { const r = i % 2 ? d.r * 0.4 : d.r * 1.5; ctx.lineTo(Math.cos(i * 0.785) * r, Math.sin(i * 0.785) * r); }
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function tekenHud() {
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  tekst(String(score), 14, 30, 34, '#fff');
+  for (let i = 0; i < 3; i++) hart(W / 2 - 30 + i * 30, 30, 1.15, i < levens);
+
+  // Wat moet je vangen?
+  ctx.textAlign = 'center';
+  tekst(nacht ? '🪩 NACHT · vang het bier' : '☀️ DAG · vang de luiers', W / 2, 62, 15, nacht ? '#ffe14a' : '#fff', 3.5);
+
+  // Tijdbalk tot de volgende wissel
+  const rest = 1 - faseTijd / FASE_DUUR;
+  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, W, 6);
+  const g = ctx.createLinearGradient(0, 0, W, 0);
+  REGENBOOG.forEach((k, i) => g.addColorStop(i / 6, k));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W * rest, 6);
+
+  // Waarschuwing 3 sec vooraf
+  const over = FASE_DUUR - faseTijd;
+  if (over <= WAARSCHUWING) {
+    const regels = nacht ? ['DE KLEINE', 'WORDT WAKKER!'] : ['DE KLEINE SLAAPT,', 'TIJD VOOR', 'EEN BIERTJE'];
+    const puls = 1 + Math.sin(tijd * 14) * 0.05;
+    ctx.save(); ctx.translate(W / 2, H * 0.3); ctx.scale(puls, puls); ctx.rotate(-0.04);
+    regels.forEach((r, i) => tekst(r, 0, i * 38, 31, nacht ? '#ffe14a' : '#ff6fd0', 7));
+    tekst(String(Math.ceil(over)), 0, regels.length * 38 + 22, 54, '#fff', 9);
+    ctx.restore();
+  }
+}
+
+function teken() {
+  ctx.setTransform(schaal, 0, 0, schaal, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  if (schud > 0) ctx.translate((Math.random() - 0.5) * 12 * schud / 0.45, (Math.random() - 0.5) * 12 * schud / 0.45);
+  tekenAchtergrond();
+  tekenNacht();
+  if (status !== 'start') {
+    tekenSpoor();
+    tekenMike();
+    for (const it of items) tekenItem(it);
+    tekenDeeltjes();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const p of popups) {
+      ctx.globalAlpha = Math.min(1, p.leven * 2.5);
+      const px = p.tekst.length > 18 ? 17 : 22;
+      tekst(p.tekst, p.x, p.y, px * (1 + Math.max(0, p.leven - 0.95) * 2.5), p.kleur);
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  if (status !== 'start') tekenHud();
+}
+
+// ---------- Lus ----------
+let vorige = 0;
+function lus(nu) {
+  const dt = Math.min(0.05, (nu - vorige) / 1000 || 0);
+  vorige = nu;
+  update(dt);
+  beat();
+  teken();
+  requestAnimationFrame(lus);
+}
+requestAnimationFrame(lus);
+
+// ---------- Besturing ----------
+function naarX(e) {
+  const r = canvas.getBoundingClientRect();
+  mike.doel = (e.clientX - r.left) / r.width * W;
+}
+canvas.addEventListener('pointerdown', e => { audioAan(); naarX(e); e.preventDefault(); });
+canvas.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' || e.buttons || e.pressure > 0) naarX(e); });
+window.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') toetsen.links = true;
+  else if (e.key === 'ArrowRight' || e.key === 'd') toetsen.rechts = true;
+  else if ((e.key === 'Enter' || e.key === ' ') && status !== 'spel') {
+    if (status === 'start' || !document.getElementById('over').hidden) { audioAan(); nieuwSpel(); }
+  }
+  else if (e.key === 'm') { audioAan(); zetMute(!gedempt); }
+  else return;
+  e.preventDefault();
+});
+window.addEventListener('keyup', e => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') toetsen.links = false;
+  if (e.key === 'ArrowRight' || e.key === 'd') toetsen.rechts = false;
+});
+document.addEventListener('visibilitychange', () => {
+  if (!ac) return;
+  if (document.hidden) ac.suspend(); else ac.resume();
+});
+document.getElementById('btnStart').addEventListener('click', () => { audioAan(); nieuwSpel(); });
+document.getElementById('btnOpnieuw').addEventListener('click', () => { audioAan(); nieuwSpel(); });
+document.getElementById('hsStart').textContent = highscore;
+})();
+</script>
+</body>
+</html>
