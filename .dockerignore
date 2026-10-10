@@ -1,4 +1,6 @@
 *
 !index.html
+!manifest.json
+!favicon.ico
 !nginx.conf
 !assets/

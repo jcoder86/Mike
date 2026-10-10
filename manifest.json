@@ -1,0 +1,24 @@
+{
+  "name": "Daddy Mike",
+  "short_name": "Daddy Mike",
+  "description": "Vang overdag de poepluiers en 's nachts het bier.",
+  "lang": "nl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1b1035",
+  "theme_color": "#1b1035",
+  "icons": [
+    {
+      "src": "assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

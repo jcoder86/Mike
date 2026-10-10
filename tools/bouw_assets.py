@@ -16,8 +16,10 @@ out = lambda n: os.path.join(ROOT, "assets", n)
 for naam in ("hoofd_neutraal", "hoofd_blij", "hoofd_vies"):
     chromakey(raw(naam + ".png"), out(naam + ".png"), 512, crop=False)
 chromakey(raw("lijf.png"), out("lijf.png"), 640)
-for naam in ("poepluier", "gouden_glitterluier", "bierblikje", "salmari"):
+for naam in ("poepluier", "gouden_glitterluier", "salmari"):
     chromakey(raw(naam + ".png"), out(naam + ".png"), 256)
+# Het blikje is groen en staat daarom op magenta in plaats van groen.
+chromakey(raw("bierblikje.png"), out("bierblikje.png"), 256, key="magenta")
 
 # Achtergrond: midden uitsnijden naar 9:16 en als JPG opslaan.
 bg = Image.open(raw("achtergrond_dag.png")).convert("RGB")

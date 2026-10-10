@@ -5,7 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#1b1035">
 <title>Daddy Mike</title>
-<link rel="icon" type="image/png" href="assets/hoofd_neutraal.png">
+<meta name="description" content="Vang overdag de poepluiers en 's nachts het bier.">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Daddy Mike">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="64x64" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta property="og:title" content="Daddy Mike">
+<meta property="og:image" content="https://mike.genapps.nl/assets/icon-512.png">
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1035; }
@@ -108,7 +118,7 @@ window.addEventListener('resize', resize);
 resize();
 
 // ---------- Beelden ----------
-const VERSIE = 2;              // ophogen als een beeld verandert (assets worden een dag gecachet)
+const VERSIE = 3;              // ophogen als een beeld verandert (assets worden een dag gecachet)
 const img = {};
 const BEELDEN = { neutraal: 'hoofd_neutraal.png', blij: 'hoofd_blij.png', vies: 'hoofd_vies.png', lijf: 'lijf.png',
                   luier: 'poepluier.png', goud: 'gouden_glitterluier.png', bier: 'bierblikje.png', salmari: 'salmari.png',
@@ -472,7 +482,7 @@ function tekenSpoor() {
 
 const EMOJI = { luier: '💩', goud: '🌟', bier: '🍺', salmari: '🍾' };
 function tekenItem(it) {
-  const b = img[it.soort], h = it.soort === 'salmari' ? 78 : it.soort === 'bier' ? 64 : 60;
+  const b = img[it.soort], h = it.soort === 'salmari' ? 100 : it.soort === 'bier' ? 72 : 60;
   ctx.save(); ctx.translate(it.x, it.y); ctx.rotate(it.hoek);
   if (it.soort === 'goud') {
     ctx.globalAlpha = 0.45 + Math.sin(tijd * 10) * 0.15;
